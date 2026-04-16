@@ -3,7 +3,7 @@ import { SubmitOutputFunctionDefinition } from "../functions/submit_output.ts";
 
 const SubmitOutputWorkflow = DefineWorkflow({
   callback_id: "submit_output_workflow",
-  title: "Submit PRJ output",
+  title: "Output Aggregator V3",
   description:
     "Collects a title, URL, and comment for a PRJ output submission.",
   input_parameters: {
@@ -20,7 +20,7 @@ const SubmitOutputWorkflow = DefineWorkflow({
 });
 
 const form = SubmitOutputWorkflow.addStep(Schema.slack.functions.OpenForm, {
-  title: "Submit PRJ output",
+  title: "Output Aggregator V3",
   interactivity: SubmitOutputWorkflow.inputs.interactivity,
   submit_label: "Submit",
   fields: {

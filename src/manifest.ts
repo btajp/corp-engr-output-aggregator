@@ -6,7 +6,7 @@ export default Manifest({
   name: "corp-engr-output-aggregator",
   description:
     "Collect PRJ output submissions from Slack and prepare delivery.",
-  icon: "assets/default_new_app_icon.png",
+  icon: "assets/icon.png",
   workflows: [SubmitOutputWorkflow],
   outgoingDomains: [],
   datastores: [SubmissionLogDatastore],

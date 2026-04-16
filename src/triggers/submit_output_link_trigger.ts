@@ -5,8 +5,8 @@ import SubmitOutputWorkflow from "../workflows/submit_output.ts";
 const SubmitOutputLinkTrigger: Trigger<typeof SubmitOutputWorkflow.definition> =
   {
     type: TriggerTypes.Shortcut,
-    name: "Submit PRJ output",
-    description: "Opens the PRJ output submission form.",
+    name: "Output Aggregator V3",
+    description: "アウトプットを投稿する",
     workflow: `#/workflows/${SubmitOutputWorkflow.definition.callback_id}`,
     inputs: {
       interactivity: {
