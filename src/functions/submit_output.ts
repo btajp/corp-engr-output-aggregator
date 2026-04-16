@@ -86,6 +86,10 @@ export default SlackFunction(
       return { error: "Submitted URL is invalid" };
     }
 
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return { error: "Submitted URL must use http or https" };
+    }
+
     const putResponse = await client.apps.datastore.put<
       typeof SubmissionLogDatastore.definition
     >({

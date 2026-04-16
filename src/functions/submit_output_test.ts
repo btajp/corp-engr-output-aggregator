@@ -145,6 +145,28 @@ Deno.test("submit_output rejects an invalid URL", async () => {
   }
 });
 
+Deno.test("submit_output rejects a non-http URL", async () => {
+  setRequiredEnv();
+
+  try {
+    const { outputs, error } = await SubmitOutputFunction(
+      createContext({
+        inputs: {
+          user: "U123",
+          title: "Weekly note",
+          url: "javascript:alert('xss')",
+          comment: "",
+        },
+      }),
+    );
+
+    assertEquals(outputs, undefined);
+    assertEquals(error, "Submitted URL must use http or https");
+  } finally {
+    resetEnv();
+  }
+});
+
 Deno.test("submit_output stores an empty comment when omitted", async () => {
   setRequiredEnv();
 
