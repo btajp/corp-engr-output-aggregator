@@ -1,15 +1,8 @@
-import {
-  assertEquals,
-  assertExists,
-  assertMatch,
-  assertStringIncludes,
-} from "@std/assert";
+import { assertEquals, assertExists, assertMatch } from "@std/assert";
 import { stub } from "@std/testing/mock";
-import { SlackFunctionTester } from "deno-slack-sdk/mod.ts";
-import SubmitOutputFunction from "./submit_output.ts";
+import { handleSubmitOutput } from "./submit_output.ts";
 import { SUBMISSION_STATUS } from "../lib/submission_status.ts";
 
-const { createContext } = SlackFunctionTester("submit_output");
 const ENV_KEYS = [
   "NOTION_TOKEN",
   "NOTION_DATABASE_ID",
@@ -36,167 +29,399 @@ function setRequiredEnv() {
   );
 }
 
-Deno.test("submit_output stores an accepted submission", async () => {
+function createClient(options?: {
+  postMessageOk?: boolean;
+  postMessageError?: string;
+  usersInfoThrows?: boolean;
+  datastoreFailureCalls?: number[];
+}) {
+  const datastoreItems: Array<Record<string, string>> = [];
+  const postedMessages: Array<Record<string, unknown>> = [];
+  const deletedMessages: Array<Record<string, unknown>> = [];
+  let datastoreCallCount = 0;
+
+  return {
+    client: {
+      apps: {
+        datastore: {
+          put: (
+            { item }: { datastore: string; item: Record<string, string> },
+          ) => {
+            datastoreCallCount += 1;
+            datastoreItems.push(structuredClone(item));
+            if (options?.datastoreFailureCalls?.includes(datastoreCallCount)) {
+              return Promise.resolve({ ok: false, error: "datastore_error" });
+            }
+            return Promise.resolve({ ok: true });
+          },
+        },
+      },
+      users: {
+        info: () => {
+          if (options?.usersInfoThrows) {
+            return Promise.reject(new Error("users_info_unavailable"));
+          }
+
+          return Promise.resolve({
+            ok: true,
+            user: {
+              profile: {
+                display_name: "okash1n",
+                image_512: "https://example.com/avatar.png",
+              },
+            },
+          });
+        },
+      },
+      chat: {
+        postMessage: (payload: Record<string, unknown>) => {
+          postedMessages.push(payload);
+          if (options?.postMessageOk === false) {
+            return Promise.resolve({
+              ok: false,
+              error: options.postMessageError ?? "channel_not_found",
+            });
+          }
+
+          return Promise.resolve({ ok: true, ts: "1710000000.000100" });
+        },
+        delete: (payload: Record<string, unknown>) => {
+          deletedMessages.push(payload);
+          return Promise.resolve({ ok: true });
+        },
+      },
+    },
+    datastoreItems,
+    postedMessages,
+    deletedMessages,
+  };
+}
+
+function expectError(
+  result: Awaited<ReturnType<typeof handleSubmitOutput>>,
+): string {
+  if (!("error" in result)) {
+    throw new Error("Expected an error result");
+  }
+
+  return result.error;
+}
+
+function expectSuccess(
+  result: Awaited<ReturnType<typeof handleSubmitOutput>>,
+): { submissionId: string } {
+  if (!("outputs" in result)) {
+    throw new Error(`Expected success but received error: ${result.error}`);
+  }
+
+  return result.outputs;
+}
+
+Deno.test("handleSubmitOutput stores a completed submission", async () => {
   setRequiredEnv();
+  const { client, datastoreItems, postedMessages } = createClient();
+  const notionRequests: unknown[] = [];
+
+  using _stubFetch = stub(
+    globalThis,
+    "fetch",
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
+      notionRequests.push(await request.json());
+      return new Response('{"id":"page-123"}', { status: 200 });
+    },
+  );
 
   try {
-    using _stubFetch = stub(
-      globalThis,
-      "fetch",
-      async (url: string | URL | Request, options?: RequestInit) => {
-        const request = url instanceof Request
-          ? url
-          : new Request(url, options);
-        assertEquals(request.method, "POST");
-        assertEquals(request.url, "https://slack.com/api/apps.datastore.put");
-
-        const body = await request.formData();
-        assertEquals(body.get("datastore"), "SubmissionLogs");
-
-        const item = JSON.parse(String(body.get("item")));
-        assertEquals(item.requested_by, "U123");
-        assertEquals(item.title, "Weekly note");
-        assertEquals(item.url, "https://example.com/post");
-        assertEquals(item.comment, "hello");
-        assertEquals(
-          item.cover_image_url,
-          "https://example.com/default-cover.png",
-        );
-        assertEquals(item.slack_status, SUBMISSION_STATUS.accepted);
-        assertEquals(item.notion_status, SUBMISSION_STATUS.accepted);
-        assertMatch(item.submission_id, /^[0-9A-Z]{26}$/);
-
-        return new Response('{"ok": true}', { status: 200 });
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        title: "Weekly note",
+        url: "https://example.com/post",
+        comment: "hello",
       },
+      client,
     );
 
-    const { outputs, error } = await SubmitOutputFunction(
-      createContext({
-        inputs: {
-          user: "U123",
-          title: "Weekly note",
-          url: "https://example.com/post",
-          comment: "hello",
-        },
-      }),
-    );
-
-    assertEquals(error, undefined);
-    assertExists(outputs?.submissionId);
+    const outputs = expectSuccess(result);
+    assertExists(outputs.submissionId);
     assertMatch(outputs.submissionId, /^[0-9A-Z]{26}$/);
+    assertEquals(datastoreItems.length, 3);
+    assertEquals(datastoreItems[0].slack_status, SUBMISSION_STATUS.accepted);
+    assertEquals(datastoreItems[1].slack_status, SUBMISSION_STATUS.accepted);
+    assertEquals(datastoreItems[1].slack_ts, "1710000000.000100");
+    assertEquals(datastoreItems[2].notion_status, SUBMISSION_STATUS.completed);
+    assertEquals(datastoreItems[2].notion_page_id, "page-123");
+    assertEquals(postedMessages.length, 1);
+    assertEquals(postedMessages[0].channel, "COUTPUT");
+    assertEquals(notionRequests.length, 1);
+    assertEquals(
+      (notionRequests[0] as { properties: { URL: { url: string } } }).properties
+        .URL.url,
+      "https://example.com/post",
+    );
   } finally {
     resetEnv();
   }
 });
 
-Deno.test("submit_output surfaces datastore errors", async () => {
+Deno.test("handleSubmitOutput marks Slack failures in Datastore", async () => {
   setRequiredEnv();
+  const { client, datastoreItems } = createClient({
+    postMessageOk: false,
+    postMessageError: "channel_not_found",
+  });
+
+  using _stubFetch = stub(
+    globalThis,
+    "fetch",
+    () => Promise.resolve(new Response('{"id":"page-123"}', { status: 200 })),
+  );
 
   try {
-    using _stubFetch = stub(
-      globalThis,
-      "fetch",
-      async () =>
-        await Promise.resolve(
-          new Response('{"ok": false, "error": "datastore_error"}', {
-            status: 200,
-          }),
-        ),
-    );
-
-    const { outputs, error } = await SubmitOutputFunction(
-      createContext({
-        inputs: {
-          user: "U123",
-          title: "Weekly note",
-          url: "https://example.com/post",
-          comment: "",
-        },
-      }),
-    );
-
-    assertEquals(outputs, undefined);
-    assertExists(error);
-    assertStringIncludes(error, "datastore_error");
-  } finally {
-    resetEnv();
-  }
-});
-
-Deno.test("submit_output rejects an invalid URL", async () => {
-  setRequiredEnv();
-
-  try {
-    const { outputs, error } = await SubmitOutputFunction(
-      createContext({
-        inputs: {
-          user: "U123",
-          title: "Weekly note",
-          url: "not-a-url",
-          comment: "",
-        },
-      }),
-    );
-
-    assertEquals(outputs, undefined);
-    assertEquals(error, "Submitted URL is invalid");
-  } finally {
-    resetEnv();
-  }
-});
-
-Deno.test("submit_output rejects a non-http URL", async () => {
-  setRequiredEnv();
-
-  try {
-    const { outputs, error } = await SubmitOutputFunction(
-      createContext({
-        inputs: {
-          user: "U123",
-          title: "Weekly note",
-          url: "javascript:alert('xss')",
-          comment: "",
-        },
-      }),
-    );
-
-    assertEquals(outputs, undefined);
-    assertEquals(error, "Submitted URL must use http or https");
-  } finally {
-    resetEnv();
-  }
-});
-
-Deno.test("submit_output stores an empty comment when omitted", async () => {
-  setRequiredEnv();
-
-  try {
-    using _stubFetch = stub(
-      globalThis,
-      "fetch",
-      async (url: string | URL | Request, options?: RequestInit) => {
-        const request = url instanceof Request
-          ? url
-          : new Request(url, options);
-        const body = await request.formData();
-        const item = JSON.parse(String(body.get("item")));
-        assertEquals(item.comment, "");
-        return new Response('{"ok": true}', { status: 200 });
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        title: "Weekly note",
+        url: "https://example.com/post",
+        comment: "hello",
       },
+      client,
     );
 
-    const { outputs, error } = await SubmitOutputFunction(
-      createContext({
-        inputs: {
-          user: "U123",
-          title: "Weekly note",
-          url: "https://example.com/post",
-        },
-      }),
+    assertEquals(
+      expectError(result),
+      "Failed to post submission: channel_not_found",
+    );
+    assertEquals(datastoreItems.length, 2);
+    assertEquals(datastoreItems[1].slack_status, SUBMISSION_STATUS.slackFailed);
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleSubmitOutput marks Notion failures in Datastore", async () => {
+  setRequiredEnv();
+  const { client, datastoreItems } = createClient();
+
+  using _stubFetch = stub(
+    globalThis,
+    "fetch",
+    () =>
+      Promise.resolve(
+        new Response(
+          '{"code":"validation_error","message":"Database schema mismatch"}',
+          { status: 400 },
+        ),
+      ),
+  );
+
+  try {
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        title: "Weekly note",
+        url: "https://example.com/post",
+        comment: "hello",
+      },
+      client,
     );
 
-    assertEquals(error, undefined);
-    assertExists(outputs?.submissionId);
+    assertEquals(
+      expectError(result),
+      "Failed to save submission to Notion: validation_error: Database schema mismatch",
+    );
+    assertEquals(datastoreItems.length, 3);
+    assertEquals(
+      datastoreItems[2].notion_status,
+      SUBMISSION_STATUS.notionFailed,
+    );
+    assertEquals(datastoreItems[2].slack_ts, "1710000000.000100");
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleSubmitOutput falls back when users.info throws", async () => {
+  setRequiredEnv();
+  const { client } = createClient({
+    usersInfoThrows: true,
+  });
+  const notionRequests: unknown[] = [];
+
+  using _stubFetch = stub(
+    globalThis,
+    "fetch",
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
+      notionRequests.push(await request.json());
+      return new Response('{"id":"page-123"}', { status: 200 });
+    },
+  );
+
+  try {
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        title: "Weekly note",
+        url: "https://example.com/post",
+      },
+      client,
+    );
+
+    expectSuccess(result);
+    assertEquals(
+      (notionRequests[0] as {
+        properties: {
+          SlackName: { rich_text: Array<{ text: { content: string } }> };
+        };
+      })
+        .properties.SlackName.rich_text[0].text.content,
+      "U123",
+    );
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleSubmitOutput rolls back when final datastore update fails", async () => {
+  setRequiredEnv();
+  const { client, datastoreItems, deletedMessages } = createClient({
+    datastoreFailureCalls: [3, 4, 5],
+  });
+  const notionRequests: Array<{ url: string; method: string }> = [];
+
+  using _stubFetch = stub(
+    globalThis,
+    "fetch",
+    (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
+      notionRequests.push({ url: request.url, method: request.method });
+      return Promise.resolve(
+        new Response('{"id":"page-123"}', { status: 200 }),
+      );
+    },
+  );
+
+  try {
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        title: "Weekly note",
+        url: "https://example.com/post",
+      },
+      client,
+    );
+
+    assertEquals(
+      expectError(result),
+      "Failed to mark submission as completed: datastore_error",
+    );
+    assertEquals(
+      datastoreItems.at(-1)?.slack_status,
+      SUBMISSION_STATUS.rolledBack,
+    );
+    assertEquals(
+      datastoreItems.at(-1)?.notion_status,
+      SUBMISSION_STATUS.rolledBack,
+    );
+    assertEquals(deletedMessages.length, 1);
+    assertEquals(deletedMessages[0].ts, "1710000000.000100");
+    assertEquals(notionRequests.length, 2);
+    assertEquals(notionRequests[1].method, "PATCH");
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleSubmitOutput rejects an invalid URL", async () => {
+  setRequiredEnv();
+  const { client } = createClient();
+
+  try {
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        title: "Weekly note",
+        url: "not-a-url",
+      },
+      client,
+    );
+
+    assertEquals(expectError(result), "Submitted URL is invalid");
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleSubmitOutput rejects a non-http URL", async () => {
+  setRequiredEnv();
+  const { client } = createClient();
+
+  try {
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        title: "Weekly note",
+        url: "javascript:alert('xss')",
+      },
+      client,
+    );
+
+    assertEquals(
+      expectError(result),
+      "Submitted URL must use http or https",
+    );
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleSubmitOutput rejects a blank title", async () => {
+  setRequiredEnv();
+  const { client } = createClient();
+
+  try {
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        title: "   ",
+        url: "https://example.com/post",
+      },
+      client,
+    );
+
+    assertEquals(expectError(result), "Submission title is required");
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleSubmitOutput rejects an oversized comment", async () => {
+  setRequiredEnv();
+  const { client } = createClient();
+
+  try {
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        title: "Weekly note",
+        url: "https://example.com/post",
+        comment: "a".repeat(1_501),
+      },
+      client,
+    );
+
+    assertEquals(
+      expectError(result),
+      "Submission comment must be 1500 characters or fewer",
+    );
   } finally {
     resetEnv();
   }

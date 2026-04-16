@@ -8,12 +8,13 @@ export default Manifest({
     "Collect PRJ output submissions from Slack and prepare delivery.",
   icon: "assets/icon.png",
   workflows: [SubmitOutputWorkflow],
-  outgoingDomains: [],
+  outgoingDomains: ["api.notion.com"],
   datastores: [SubmissionLogDatastore],
   botScopes: [
     "chat:write",
     "chat:write.public",
     "datastore:read",
     "datastore:write",
+    "users:read",
   ],
 });

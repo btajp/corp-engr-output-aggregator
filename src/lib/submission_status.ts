@@ -1,5 +1,9 @@
 export const SUBMISSION_STATUS = {
   accepted: "accepted",
+  completed: "completed",
+  slackFailed: "slack_failed",
+  notionFailed: "notion_failed",
+  rolledBack: "rolled_back",
 } as const;
 
 export type SubmissionStatus =
