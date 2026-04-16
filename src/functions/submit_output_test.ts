@@ -156,6 +156,11 @@ Deno.test("handleSubmitOutput stores a completed submission", async () => {
     assertEquals(datastoreItems[2].notion_page_id, "page-123");
     assertEquals(postedMessages.length, 1);
     assertEquals(postedMessages[0].channel, "COUTPUT");
+    assertEquals(
+      (postedMessages[0].blocks as Array<{ text?: { text?: string } }>).at(-1)
+        ?.text?.text,
+      "*過去の投稿は* <https://corp-engr-outputs.notion.site/|こちら>",
+    );
     assertEquals(notionRequests.length, 1);
     assertEquals(
       (notionRequests[0] as { properties: { URL: { url: string } } }).properties

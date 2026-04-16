@@ -11,6 +11,7 @@ export type OutputMessageInput = {
   comment: string;
   mention: string;
   coverImageUrl: string;
+  outputArchiveUrl: string;
 };
 
 export function buildOutputMessage(input: OutputMessageInput) {
@@ -53,6 +54,16 @@ export function buildOutputMessage(input: OutputMessageInput) {
         },
       ]
       : []),
+    {
+      type: "divider",
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*過去の投稿は* <${input.outputArchiveUrl}|こちら>`,
+      },
+    },
   ];
 
   return {

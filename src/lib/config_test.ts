@@ -7,6 +7,7 @@ const ENV_KEYS = [
   "OUTPUT_CHANNEL_ID",
   "ALERT_CHANNEL_ID",
   "DEFAULT_COVER_IMAGE_URL",
+  "OUTPUT_ARCHIVE_URL",
   "REPLAY_ALLOWED_USER_IDS",
   "OGP_PROXY_URL",
   "OGP_PROXY_SHARED_SECRET_ACTIVE",
@@ -26,6 +27,7 @@ Deno.test("getConfig reads required and optional values", () => {
   Deno.env.set("OUTPUT_CHANNEL_ID", "C123");
   Deno.env.set("ALERT_CHANNEL_ID", "C456");
   Deno.env.set("DEFAULT_COVER_IMAGE_URL", "https://example.com/cover.png");
+  Deno.env.set("OUTPUT_ARCHIVE_URL", "https://corp-engr-outputs.notion.site/");
   Deno.env.set("REPLAY_ALLOWED_USER_IDS", "U123, U456");
   Deno.env.set("OGP_PROXY_URL", "https://corp-engr.btajp.run/prj-output/ogp");
   Deno.env.set("OGP_PROXY_SHARED_SECRET_ACTIVE", "active");
@@ -37,6 +39,7 @@ Deno.test("getConfig reads required and optional values", () => {
     outputChannelId: "C123",
     alertChannelId: "C456",
     defaultCoverImageUrl: "https://example.com/cover.png",
+    outputArchiveUrl: "https://corp-engr-outputs.notion.site/",
     replayAllowedUserIds: ["U123", "U456"],
     ogpProxyUrl: "https://corp-engr.btajp.run/prj-output/ogp",
     ogpProxySharedSecretActive: "active",
@@ -61,6 +64,7 @@ Deno.test("getConfig treats blank values as missing", () => {
   Deno.env.set("OUTPUT_CHANNEL_ID", "C123");
   Deno.env.set("ALERT_CHANNEL_ID", "C456");
   Deno.env.set("DEFAULT_COVER_IMAGE_URL", "https://example.com/cover.png");
+  Deno.env.set("OUTPUT_ARCHIVE_URL", " ");
   Deno.env.set("REPLAY_ALLOWED_USER_IDS", " ");
   Deno.env.set("OGP_PROXY_URL", " ");
   Deno.env.set("OGP_PROXY_SHARED_SECRET_ACTIVE", " ");
@@ -76,6 +80,7 @@ Deno.test("getConfig returns undefined for blank optional values", () => {
   Deno.env.set("OUTPUT_CHANNEL_ID", "C123");
   Deno.env.set("ALERT_CHANNEL_ID", "C456");
   Deno.env.set("DEFAULT_COVER_IMAGE_URL", "https://example.com/cover.png");
+  Deno.env.set("OUTPUT_ARCHIVE_URL", " ");
   Deno.env.set("REPLAY_ALLOWED_USER_IDS", " ");
   Deno.env.set("OGP_PROXY_URL", " ");
   Deno.env.set("OGP_PROXY_SHARED_SECRET_ACTIVE", " ");
@@ -83,6 +88,10 @@ Deno.test("getConfig returns undefined for blank optional values", () => {
 
   const config = getConfig();
 
+  assertEquals(
+    config.outputArchiveUrl,
+    "https://corp-engr-outputs.notion.site/",
+  );
   assertEquals(config.replayAllowedUserIds, []);
   assertEquals(config.ogpProxyUrl, undefined);
   assertEquals(config.ogpProxySharedSecretActive, undefined);

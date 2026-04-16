@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- 投稿メッセージに `過去の投稿はこちら` リンクを追加
+- 公開 repo から外した `.slack/` runtime state をローカルで復元し、再 deploy
+  できる状態に戻した
+
 ## 0.1.0
 
 - `ALERT_CHANNEL_ID` に daily failure summary を送る workflow を追加

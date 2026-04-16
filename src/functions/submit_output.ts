@@ -370,6 +370,7 @@ export async function handleSubmitOutput(
       comment: validatedInputs.comment,
       mention: `<@${inputs.user}>`,
       coverImageUrl,
+      outputArchiveUrl: config.outputArchiveUrl,
     }),
   });
 

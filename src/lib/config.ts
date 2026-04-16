@@ -14,6 +14,7 @@ export type AppConfig = {
   outputChannelId: string;
   alertChannelId: string;
   defaultCoverImageUrl: string;
+  outputArchiveUrl: string;
   replayAllowedUserIds: string[];
   ogpProxyUrl?: string;
   ogpProxySharedSecretActive?: string;
@@ -49,6 +50,8 @@ export function getConfig(): AppConfig {
     outputChannelId: readRequiredEnv("OUTPUT_CHANNEL_ID"),
     alertChannelId: readRequiredEnv("ALERT_CHANNEL_ID"),
     defaultCoverImageUrl: readRequiredEnv("DEFAULT_COVER_IMAGE_URL"),
+    outputArchiveUrl: readOptionalEnv("OUTPUT_ARCHIVE_URL") ??
+      "https://corp-engr-outputs.notion.site/",
     replayAllowedUserIds: readOptionalListEnv("REPLAY_ALLOWED_USER_IDS"),
     ogpProxyUrl: readOptionalEnv("OGP_PROXY_URL"),
     ogpProxySharedSecretActive: readOptionalEnv(

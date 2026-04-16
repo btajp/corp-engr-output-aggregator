@@ -121,6 +121,7 @@ export async function handleReplaySubmission(
         comment: record.comment,
         mention: `<@${record.requested_by}>`,
         coverImageUrl: record.cover_image_url,
+        outputArchiveUrl: config.outputArchiveUrl,
       }),
     });
 
