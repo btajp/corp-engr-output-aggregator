@@ -307,8 +307,9 @@ export async function handleSubmitOutput(
     comment?: string;
   },
   client: SubmitOutputClient,
+  env?: Record<string, string>,
 ): Promise<SubmitOutputResult> {
-  const config = getConfig();
+  const config = getConfig(env);
   const validatedInputs = validateInputs(inputs);
   if ("error" in validatedInputs) {
     return validatedInputs;
@@ -515,5 +516,6 @@ export async function handleSubmitOutput(
 
 export default SlackFunction(
   SubmitOutputFunctionDefinition,
-  async ({ inputs, client }) => await handleSubmitOutput(inputs, client),
+  async ({ inputs, client, env }) =>
+    await handleSubmitOutput(inputs, client, env),
 );

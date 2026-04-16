@@ -157,9 +157,33 @@ Deno.test("handleSubmitOutput stores a completed submission", async () => {
     assertEquals(postedMessages.length, 1);
     assertEquals(postedMessages[0].channel, "COUTPUT");
     assertEquals(
-      (postedMessages[0].blocks as Array<{ text?: { text?: string } }>).at(-1)
-        ?.text?.text,
-      "*過去の投稿は* <https://corp-engr-outputs.notion.site/|こちら>",
+      postedMessages[0].text,
+      "新しいアウトプットが投稿されたよ\nhttps://example.com/post",
+    );
+    assertEquals(
+      (
+        postedMessages[0].blocks as Array<{
+          text?: { text?: string };
+          accessory?: { type?: string; url?: string };
+        }>
+      ).at(-1)?.text?.text,
+      "*過去の投稿は*",
+    );
+    assertEquals(
+      (
+        postedMessages[0].blocks as Array<{
+          accessory?: { type?: string; url?: string };
+        }>
+      ).at(-1)?.accessory?.type,
+      "button",
+    );
+    assertEquals(
+      (
+        postedMessages[0].blocks as Array<{
+          accessory?: { type?: string; url?: string };
+        }>
+      ).at(-1)?.accessory?.url,
+      "https://corp-engr-outputs.notion.site/",
     );
     assertEquals(notionRequests.length, 1);
     assertEquals(

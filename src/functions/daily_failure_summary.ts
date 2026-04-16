@@ -148,8 +148,9 @@ async function collectFailureItems(client: DailySummaryClient, since: string) {
 export async function handleDailyFailureSummary(
   client: DailySummaryClient,
   now = new Date(),
+  env?: Record<string, string>,
 ) {
-  const config = getConfig();
+  const config = getConfig(env);
   const sinceDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const since = sinceDate.toISOString();
   const items = await collectFailureItems(client, since);
@@ -197,5 +198,6 @@ export async function handleDailyFailureSummary(
 
 export default SlackFunction(
   DailyFailureSummaryFunctionDefinition,
-  async ({ client }) => await handleDailyFailureSummary(client),
+  async ({ client, env }) =>
+    await handleDailyFailureSummary(client, new Date(), env),
 );

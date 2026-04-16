@@ -29,17 +29,16 @@ export function buildOutputMessage(input: OutputMessageInput) {
     },
     {
       type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*タイトル*\n<${input.url}|${
-          escapeMrkdwn(input.title)
-        }>\n\n*投稿者*\n${input.mention}`,
-      },
-      accessory: {
-        type: "image",
-        image_url: input.coverImageUrl,
-        alt_text: input.title,
-      },
+      fields: [
+        {
+          type: "mrkdwn",
+          text: `*タイトル:*\n<${input.url}|${escapeMrkdwn(input.title)}>`,
+        },
+        {
+          type: "mrkdwn",
+          text: `*投稿者:*\n${input.mention}`,
+        },
+      ],
     },
     ...(input.comment
       ? [
@@ -47,9 +46,9 @@ export function buildOutputMessage(input: OutputMessageInput) {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*一言コメント*\n>${
-              escapeMrkdwn(input.comment).replaceAll("\n", "\n>")
-            }`,
+            text: `*一言コメント*\n\`\`\`\n${
+              escapeMrkdwn(input.comment)
+            }\n\`\`\``,
           },
         },
       ]
@@ -61,13 +60,23 @@ export function buildOutputMessage(input: OutputMessageInput) {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*過去の投稿は* <${input.outputArchiveUrl}|こちら>`,
+        text: "*過去の投稿は*",
+      },
+      accessory: {
+        type: "button",
+        text: {
+          type: "plain_text",
+          text: "こちら",
+          emoji: true,
+        },
+        url: input.outputArchiveUrl,
+        action_id: "open_output_archive",
       },
     },
   ];
 
   return {
-    text: `${input.title} ${input.url}`,
+    text: `新しいアウトプットが投稿されたよ\n${input.url}`,
     blocks,
   };
 }

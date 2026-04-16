@@ -79,8 +79,9 @@ function canReplay(userId: string, allowedUserIds: string[]) {
 export async function handleReplaySubmission(
   inputs: { user: string; submissionId: string },
   client: ReplayClient,
+  env?: Record<string, string>,
 ) {
-  const config = getConfig();
+  const config = getConfig(env);
   if (!canReplay(inputs.user, config.replayAllowedUserIds)) {
     return { error: "You are not allowed to replay submissions" };
   }
@@ -205,5 +206,6 @@ export async function handleReplaySubmission(
 
 export default SlackFunction(
   ReplaySubmissionFunctionDefinition,
-  async ({ inputs, client }) => await handleReplaySubmission(inputs, client),
+  async ({ inputs, client, env }) =>
+    await handleReplaySubmission(inputs, client, env),
 );

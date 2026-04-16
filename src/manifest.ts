@@ -5,7 +5,7 @@ import SubmitOutputWorkflow from "./workflows/submit_output.ts";
 import ReplayFailedSubmissionWorkflow from "./workflows/replay_failed_submission.ts";
 
 export default Manifest({
-  name: "corp-engr-output-aggregator",
+  name: "Output Aggregator V3",
   description:
     "Collect PRJ output submissions from Slack and prepare delivery.",
   icon: "assets/icon.png",

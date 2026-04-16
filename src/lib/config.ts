@@ -7,6 +7,9 @@ const REQUIRED_ENV_KEYS = [
 ] as const;
 
 type RequiredEnvKey = (typeof REQUIRED_ENV_KEYS)[number];
+type EnvSource = {
+  [key: string]: string | undefined;
+};
 
 export type AppConfig = {
   notionToken: string;
@@ -21,21 +24,21 @@ export type AppConfig = {
   ogpProxySharedSecretNext?: string;
 };
 
-function readRequiredEnv(key: RequiredEnvKey): string {
-  const value = Deno.env.get(key)?.trim();
+function readRequiredEnv(key: RequiredEnvKey, env?: EnvSource): string {
+  const value = (env ? env[key] : Deno.env.get(key))?.trim();
   if (!value) {
     throw new Error(`Missing required environment variable: ${key}`);
   }
   return value;
 }
 
-function readOptionalEnv(key: string): string | undefined {
-  const value = Deno.env.get(key)?.trim();
+function readOptionalEnv(key: string, env?: EnvSource): string | undefined {
+  const value = (env ? env[key] : Deno.env.get(key))?.trim();
   return value ? value : undefined;
 }
 
-function readOptionalListEnv(key: string): string[] {
-  const value = readOptionalEnv(key);
+function readOptionalListEnv(key: string, env?: EnvSource): string[] {
+  const value = readOptionalEnv(key, env);
   if (!value) {
     return [];
   }
@@ -43,20 +46,24 @@ function readOptionalListEnv(key: string): string[] {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
-export function getConfig(): AppConfig {
+export function getConfig(env?: EnvSource): AppConfig {
   return {
-    notionToken: readRequiredEnv("NOTION_TOKEN"),
-    notionDatabaseId: readRequiredEnv("NOTION_DATABASE_ID"),
-    outputChannelId: readRequiredEnv("OUTPUT_CHANNEL_ID"),
-    alertChannelId: readRequiredEnv("ALERT_CHANNEL_ID"),
-    defaultCoverImageUrl: readRequiredEnv("DEFAULT_COVER_IMAGE_URL"),
-    outputArchiveUrl: readOptionalEnv("OUTPUT_ARCHIVE_URL") ??
+    notionToken: readRequiredEnv("NOTION_TOKEN", env),
+    notionDatabaseId: readRequiredEnv("NOTION_DATABASE_ID", env),
+    outputChannelId: readRequiredEnv("OUTPUT_CHANNEL_ID", env),
+    alertChannelId: readRequiredEnv("ALERT_CHANNEL_ID", env),
+    defaultCoverImageUrl: readRequiredEnv("DEFAULT_COVER_IMAGE_URL", env),
+    outputArchiveUrl: readOptionalEnv("OUTPUT_ARCHIVE_URL", env) ??
       "https://corp-engr-outputs.notion.site/",
-    replayAllowedUserIds: readOptionalListEnv("REPLAY_ALLOWED_USER_IDS"),
-    ogpProxyUrl: readOptionalEnv("OGP_PROXY_URL"),
+    replayAllowedUserIds: readOptionalListEnv("REPLAY_ALLOWED_USER_IDS", env),
+    ogpProxyUrl: readOptionalEnv("OGP_PROXY_URL", env),
     ogpProxySharedSecretActive: readOptionalEnv(
       "OGP_PROXY_SHARED_SECRET_ACTIVE",
+      env,
     ),
-    ogpProxySharedSecretNext: readOptionalEnv("OGP_PROXY_SHARED_SECRET_NEXT"),
+    ogpProxySharedSecretNext: readOptionalEnv(
+      "OGP_PROXY_SHARED_SECRET_NEXT",
+      env,
+    ),
   };
 }
