@@ -1,0 +1,18 @@
+{
+  "name": "corp-engr-output-ogp-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-04-16",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "corp-engr.btajp.run/prj-output/ogp*",
+      "zone_name": "btajp.run"
+    }
+  ],
+  "vars": {
+    "OGP_FETCH_TIMEOUT_MS": "3000",
+    "OGP_MAX_REDIRECTS": "3",
+    "OGP_MAX_RESPONSE_BYTES": "1000000",
+    "OGP_RATE_LIMIT_PER_MINUTE": "30"
+  }
+}

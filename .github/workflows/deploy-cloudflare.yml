@@ -1,0 +1,47 @@
+name: Deploy Cloudflare OGP Proxy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+
+      - name: Setup Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8
+        with:
+          node-version: 22
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@4.62.0
+
+      - name: Put active secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OGP_PROXY_SHARED_SECRET_ACTIVE: ${{ secrets.OGP_PROXY_SHARED_SECRET_ACTIVE }}
+        run: |
+          printf '%s' "$OGP_PROXY_SHARED_SECRET_ACTIVE" | \
+            wrangler secret put OGP_PROXY_SHARED_SECRET_ACTIVE \
+              --config workers/ogp-proxy/wrangler.jsonc
+
+      - name: Put next secret when configured
+        if: ${{ secrets.OGP_PROXY_SHARED_SECRET_NEXT != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OGP_PROXY_SHARED_SECRET_NEXT: ${{ secrets.OGP_PROXY_SHARED_SECRET_NEXT }}
+        run: |
+          printf '%s' "$OGP_PROXY_SHARED_SECRET_NEXT" | \
+            wrangler secret put OGP_PROXY_SHARED_SECRET_NEXT \
+              --config workers/ogp-proxy/wrangler.jsonc
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler deploy --config workers/ogp-proxy/wrangler.jsonc

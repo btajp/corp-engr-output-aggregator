@@ -1,0 +1,7 @@
+dist
+package
+.DS_Store
+.env
+.env.*
+!.env.example
+.slack/

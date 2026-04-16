@@ -1,0 +1,31 @@
+name: Deploy Slack App
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+
+      - name: Install Slack CLI
+        run: |
+          curl -fsSLo /tmp/slack-cli.tar.gz \
+            https://downloads.slack-edge.com/slack-cli/slack_cli_4.0.1_linux_64-bit.tar.gz
+          mkdir -p "$HOME/.slack"
+          tar -xzf /tmp/slack-cli.tar.gz -C "$HOME/.slack"
+          chmod +x "$HOME/.slack/bin/slack"
+
+      - name: Add Slack CLI to PATH
+        run: echo "$HOME/.slack/bin" >> "$GITHUB_PATH"
+
+      - name: Authenticate with service token
+        env:
+          SLACK_SERVICE_TOKEN: ${{ secrets.SLACK_SERVICE_TOKEN }}
+        run: slack login --team corp-engr --token "$SLACK_SERVICE_TOKEN"
+
+      - name: Deploy app
+        run: slack deploy --team corp-engr --force
