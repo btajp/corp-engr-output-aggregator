@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- README 冒頭を `情シスSlack` 向けの表現に調整し、tag badge を追加
+- GitHub の OGP 用画像 `assets/github-social-preview.png` を追加
+- GitHub repository description を README 冒頭に寄せた内容へ更新
+
 ## 0.1.2
 
 - Slack app 名を `Output Aggregator V3` に変更

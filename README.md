@@ -1,7 +1,9 @@
 # corp-engr-output-aggregator
 
-`#prj-output` で共有されたアウトプットを、Slack と Notion に揃えて残すための
-`slack-cli` 管理 Slack Platform app です。Slack 上の公開名は
+[![GitHub Tag](https://img.shields.io/github/v/tag/btajp/corp-engr-output-aggregator?sort=semver)](https://github.com/btajp/corp-engr-output-aggregator/tags)
+
+[`情シスSlack`](https://corp-engr.jp) の `#prj-output` で共有されたアウトプットを、
+Slack と Notion に揃えて残すための `slack-cli` 管理 Slack Platform app です。Slack 上の公開名は
 `Output Aggregator V3` です。
 
 ## できること
