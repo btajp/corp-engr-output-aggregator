@@ -7,6 +7,7 @@ const SubmissionLogDatastore = DefineDatastore({
     submission_id: { type: Schema.types.string },
     requested_at: { type: Schema.types.string },
     requested_by: { type: Schema.types.string },
+    output_channel_id: { type: Schema.types.string },
     title: { type: Schema.types.string },
     url: { type: Schema.types.string },
     comment: { type: Schema.types.string },

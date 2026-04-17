@@ -10,18 +10,56 @@ export type OutputMessageInput = {
   url: string;
   comment: string;
   mention: string;
-  coverImageUrl: string;
+  posterImageUrl?: string;
+  coverImageUrl?: string;
   outputArchiveUrl: string;
+  ogpTitle?: string;
+  ogpDescription?: string;
+  ogpSiteName?: string;
 };
 
+function truncate(text: string, maxLength: number) {
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
+}
+
+function normalizeForComparison(text: string) {
+  return text
+    .toLowerCase()
+    .replaceAll(/https?:\/\/\S+/g, " ")
+    .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim();
+}
+
+function shouldOmitDescription(title: string, description?: string) {
+  if (!description) {
+    return true;
+  }
+
+  const normalizedTitle = normalizeForComparison(title);
+  const normalizedDescription = normalizeForComparison(description);
+  if (!normalizedTitle || !normalizedDescription) {
+    return false;
+  }
+
+  return normalizedTitle.includes(normalizedDescription) ||
+    normalizedDescription.includes(normalizedTitle);
+}
+
 export function buildOutputMessage(input: OutputMessageInput) {
+  const cardTitle = truncate(input.ogpTitle?.trim() || input.title, 160);
+  const rawDescription = input.ogpDescription?.trim();
+  const cardDescription = rawDescription && !shouldOmitDescription(cardTitle, rawDescription)
+    ? truncate(rawDescription, 280)
+    : undefined;
+  const cardSiteName = input.ogpSiteName?.trim();
+
   const blocks = [
     {
-      type: "header",
+      type: "section",
       text: {
-        type: "plain_text",
-        text: "新しいアウトプットが投稿されたよ",
-        emoji: true,
+        type: "mrkdwn",
+        text: "*新しいアウトプットが投稿されたよ*",
       },
     },
     {
@@ -32,13 +70,20 @@ export function buildOutputMessage(input: OutputMessageInput) {
       fields: [
         {
           type: "mrkdwn",
-          text: `*タイトル:*\n<${input.url}|${escapeMrkdwn(input.title)}>`,
+          text: `*タイトル:*\n${escapeMrkdwn(input.title)}`,
         },
         {
           type: "mrkdwn",
           text: `*投稿者:*\n${input.mention}`,
         },
       ],
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*URL:*\n${escapeMrkdwn(input.url)}`,
+      },
     },
     ...(input.comment
       ? [
@@ -50,6 +95,15 @@ export function buildOutputMessage(input: OutputMessageInput) {
               escapeMrkdwn(input.comment)
             }\n\`\`\``,
           },
+          ...(input.posterImageUrl
+            ? {
+              accessory: {
+                type: "image",
+                image_url: input.posterImageUrl,
+                alt_text: "投稿者アイコン",
+              },
+            }
+            : {}),
         },
       ]
       : []),
@@ -60,23 +114,34 @@ export function buildOutputMessage(input: OutputMessageInput) {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "*過去の投稿は*",
+        text: [
+          cardSiteName ? `*${escapeMrkdwn(cardSiteName)}*` : undefined,
+          `*${escapeMrkdwn(cardTitle)}*`,
+          cardDescription ? escapeMrkdwn(cardDescription) : undefined,
+        ].filter(Boolean).join("\n"),
       },
-      accessory: {
-        type: "button",
-        text: {
-          type: "plain_text",
-          text: "こちら",
-          emoji: true,
-        },
-        url: input.outputArchiveUrl,
-        action_id: "open_output_archive",
+    },
+    ...(input.coverImageUrl
+      ? [{
+        type: "image",
+        image_url: input.coverImageUrl,
+        alt_text: cardTitle,
+      }]
+      : []),
+    {
+      type: "divider",
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*過去の投稿は* <${input.outputArchiveUrl}|こちら>`,
       },
     },
   ];
 
   return {
-    text: `新しいアウトプットが投稿されたよ\n${input.url}`,
+    text: `新しいアウトプットが投稿されたよ: ${input.title}`,
     blocks,
   };
 }

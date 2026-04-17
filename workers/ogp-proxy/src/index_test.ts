@@ -50,7 +50,7 @@ Deno.test("handleRequest returns og:image when the page includes it", async () =
   globalThis.fetch = () =>
     Promise.resolve(
       new Response(
-        '<html><head><meta property="og:image" content="https://example.com/ogp.png"></head></html>',
+        '<html><head><meta property="og:image" content="https://example.com/ogp.png"><meta property="og:title" content="Example Post"><meta property="og:description" content="Preview body"><meta property="og:site_name" content="Example Site"></head></html>',
         { status: 200, headers: { "content-type": "text/html" } },
       ),
     );
@@ -58,8 +58,63 @@ Deno.test("handleRequest returns og:image when the page includes it", async () =
   try {
     const response = await handleRequest(request, env);
     assertEquals(response.status, 200);
-    const payload = await response.json() as { coverImageUrl: string };
+    const payload = await response.json() as {
+      coverImageUrl: string;
+      title: string;
+      description: string;
+      siteName: string;
+    };
     assertEquals(payload.coverImageUrl, "https://example.com/ogp.png");
+    assertEquals(payload.title, "Example Post");
+    assertEquals(payload.description, "Preview body");
+    assertEquals(payload.siteName, "Example Site");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("handleRequest decodes html entities in og:image urls", async () => {
+  const targetUrl = "https://example.com/post";
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const signature = await createOgpProxySignature({
+    secret: "secret",
+    timestamp,
+    targetUrl,
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input: string | URL | Request) => {
+    const request = input instanceof Request ? input : new Request(input);
+    if (request.url.startsWith("https://example.com/post")) {
+      return Promise.resolve(
+        new Response(
+          '<html><head><meta property="og:image" content="https://cdn.example.com/og.png?ixlib=rb-4.0.0&amp;w=1200&amp;fm=jpg"></head></html>',
+          { status: 200, headers: { "content-type": "text/html" } },
+        ),
+      );
+    }
+    return Promise.reject(new Error(`Unexpected fetch: ${request.url}`));
+  }) as typeof fetch;
+
+  try {
+    const request = new Request(
+      `https://corp-engr.btajp.run/prj-output/ogp?url=${encodeURIComponent(targetUrl)}`,
+      {
+        headers: {
+          [OGP_PROXY_HEADERS.timestamp]: timestamp,
+          [OGP_PROXY_HEADERS.signature]: signature,
+        },
+      },
+    );
+
+    const response = await handleRequest(request, {
+      OGP_PROXY_SHARED_SECRET_ACTIVE: "secret",
+    });
+    const payload = await response.json() as { coverImageUrl: string };
+    assertEquals(
+      payload.coverImageUrl,
+      "https://cdn.example.com/og.png?ixlib=rb-4.0.0&w=1200&fm=jpg",
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -113,4 +168,22 @@ Deno.test("handleRequest blocks localhost targets", async () => {
 
   const response = await handleRequest(request, env);
   assertEquals(response.status, 403);
+});
+
+Deno.test("handleRequest renders fallback image svg", async () => {
+  const response = await handleRequest(
+    new Request(
+      "https://corp-engr.btajp.run/prj-output/fallback-image?title=Example%20Title&url=https%3A%2F%2Fexample.com&comment=hello",
+    ),
+    {},
+  );
+
+  assertEquals(response.status, 200);
+  assertEquals(
+    response.headers.get("content-type"),
+    "image/svg+xml; charset=utf-8",
+  );
+  const body = await response.text();
+  assertEquals(body.includes("Example Title"), true);
+  assertEquals(body.includes("https://example.com"), true);
 });

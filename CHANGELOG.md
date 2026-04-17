@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0
+
+- Slack 投稿メッセージに OGP card を追加し、site name / title / description
+  / cover image を表示するよう変更
+- Cloudflare OGP proxy を拡張し、HTML fetch から `og:image` / `og:title` /
+  `og:description` / `og:site_name` / `twitter:*` / icon fallback まで取得
+  できるようにした
+- `OGP_FETCH_TIMEOUT_MS` を `10000` に引き上げ、応答が遅い origin でも OGP
+  取得が完走するようにした
+- test-output channel 用 Link Trigger を追加し、workflow の `channelId`
+  で `#prj-output` と `test-output` を切り替えて投稿できるようにした
+- test-output への投稿時は Notion への保存を skip するよう変更
+- replay workflow が元の `output_channel_id` を基点に OGP 再取得付きで
+  実行されるよう変更
+- `submission_log` datastore に `output_channel_id` を追加
+- Slack postMessage 失敗時に `response_metadata.messages` を datastore の
+  `error_message` と failure alert に含めるよう変更
+- OGP proxy 呼び出しの skip / 非 ok / 例外経路を `console.warn` で可視化
+  し、silent fallback を追跡できるようにした
+
 ## 0.1.3
 
 - README 冒頭を `情シスSlack` 向けの表現に調整し、tag badge を追加

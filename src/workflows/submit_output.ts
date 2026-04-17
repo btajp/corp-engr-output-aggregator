@@ -14,8 +14,11 @@ const SubmitOutputWorkflow = DefineWorkflow({
       user: {
         type: Schema.slack.types.user_id,
       },
+      channelId: {
+        type: Schema.slack.types.channel_id,
+      },
     },
-    required: ["interactivity", "user"],
+    required: ["interactivity", "user", "channelId"],
   },
 });
 
@@ -48,6 +51,7 @@ const form = SubmitOutputWorkflow.addStep(Schema.slack.functions.OpenForm, {
 
 SubmitOutputWorkflow.addStep(SubmitOutputFunctionDefinition, {
   user: SubmitOutputWorkflow.inputs.user,
+  channelId: SubmitOutputWorkflow.inputs.channelId,
   title: form.outputs.fields.title,
   url: form.outputs.fields.url,
   comment: form.outputs.fields.comment,

@@ -6,7 +6,7 @@ const SubmitOutputLinkTrigger: Trigger<typeof SubmitOutputWorkflow.definition> =
   {
     type: TriggerTypes.Shortcut,
     name: "Output Aggregator V3",
-    description: "アウトプットを投稿する",
+    description: "アウトプットを投稿する (#prj-output)",
     workflow: `#/workflows/${SubmitOutputWorkflow.definition.callback_id}`,
     inputs: {
       interactivity: {
@@ -14,6 +14,9 @@ const SubmitOutputLinkTrigger: Trigger<typeof SubmitOutputWorkflow.definition> =
       },
       user: {
         value: TriggerContextData.Shortcut.user_id,
+      },
+      channelId: {
+        value: "C01HXE8TJ2Z",
       },
     },
   };

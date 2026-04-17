@@ -11,6 +11,8 @@ const ENV_KEYS = [
   "DEFAULT_COVER_IMAGE_URL",
   "REPLAY_ALLOWED_USER_IDS",
 ] as const;
+const TEST_OUTPUT_CHANNEL_ID = "C0AT62PR96Z";
+const PRODUCTION_OUTPUT_CHANNEL_ID = "C01HXE8TJ2Z";
 
 function resetEnv() {
   for (const key of ENV_KEYS) {
@@ -38,6 +40,7 @@ function createClient(recordOverrides?: Partial<Record<string, string>>) {
     submission_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     requested_at: new Date().toISOString(),
     requested_by: "U123",
+    output_channel_id: PRODUCTION_OUTPUT_CHANNEL_ID,
     title: "Weekly note",
     url: "https://example.com/post",
     comment: "hello",
@@ -110,6 +113,7 @@ Deno.test("handleReplaySubmission replays Slack and Notion for slack_failed", as
     }
     assertExists(result.outputs?.submissionId);
     assertEquals(postedMessages.length, 1);
+    assertEquals(postedMessages[0].channel, PRODUCTION_OUTPUT_CHANNEL_ID);
     assertEquals(storedItems.at(-1)?.slack_status, SUBMISSION_STATUS.completed);
     assertEquals(
       storedItems.at(-1)?.notion_status,
@@ -149,6 +153,48 @@ Deno.test("handleReplaySubmission only retries Notion for notion_failed", async 
       storedItems.at(-1)?.notion_status,
       SUBMISSION_STATUS.completed,
     );
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleReplaySubmission skips Notion for test-output", async () => {
+  setRequiredEnv();
+  const { client, storedItems, postedMessages } = createClient({
+    output_channel_id: TEST_OUTPUT_CHANNEL_ID,
+    slack_status: SUBMISSION_STATUS.slackFailed,
+    slack_ts: "",
+    notion_status: SUBMISSION_STATUS.accepted,
+    notion_page_id: "",
+  });
+  const notionRequests: unknown[] = [];
+
+  using _stubFetch = stub(
+    globalThis,
+    "fetch",
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
+      notionRequests.push(await request.json());
+      return new Response('{"id":"page-123"}', { status: 200 });
+    },
+  );
+
+  try {
+    const result = await handleReplaySubmission(
+      { user: "UADMIN", submissionId: "01ARZ3NDEKTSV4RRFFQ69G5FAV" },
+      client,
+    );
+
+    if (!("outputs" in result)) {
+      throw new Error(result.error);
+    }
+    assertEquals(postedMessages.length, 1);
+    assertEquals(postedMessages[0].channel, TEST_OUTPUT_CHANNEL_ID);
+    assertEquals(storedItems.at(-1)?.notion_status, SUBMISSION_STATUS.completed);
+    assertEquals(storedItems.at(-1)?.notion_page_id, "");
+    assertEquals(notionRequests.length, 0);
   } finally {
     resetEnv();
   }

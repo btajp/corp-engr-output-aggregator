@@ -1,6 +1,9 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
 import { getConfig } from "../lib/config.ts";
 import {
+  resolveOgpPreview,
+} from "../lib/cover-image.ts";
+import {
   buildOutputMessage,
   resolveSlackUserProfile,
   type SlackUserProfile,
@@ -8,6 +11,8 @@ import {
 import { createNotionPageWithRetry } from "../lib/notion.ts";
 import { SUBMISSION_STATUS } from "../lib/submission_status.ts";
 import { sendFailureAlert } from "../lib/alert.ts";
+
+const TEST_OUTPUT_CHANNEL_ID = "C0AT62PR96Z";
 
 export const ReplaySubmissionFunctionDefinition = DefineFunction({
   callback_id: "replay_submission",
@@ -54,6 +59,8 @@ type ReplayClient = {
       channel: string;
       text: string;
       blocks: unknown[];
+      unfurl_links?: boolean;
+      unfurl_media?: boolean;
     }): Promise<{ ok: boolean; error?: string; ts?: string }>;
   };
   users: {
@@ -74,6 +81,10 @@ type ReplayClient = {
 
 function canReplay(userId: string, allowedUserIds: string[]) {
   return allowedUserIds.includes(userId);
+}
+
+function shouldSkipNotion(channelId: string | undefined) {
+  return channelId === TEST_OUTPUT_CHANNEL_ID;
 }
 
 export async function handleReplaySubmission(
@@ -97,12 +108,14 @@ export async function handleReplaySubmission(
   }
 
   const record = structuredClone(getResponse.item);
+  const outputChannelId = record.output_channel_id || config.outputChannelId;
   const shouldReplaySlack = !record.slack_ts ||
     record.slack_status === SUBMISSION_STATUS.slackFailed ||
     record.slack_status === SUBMISSION_STATUS.rolledBack;
-  const shouldReplayNotion = !record.notion_page_id ||
-    record.notion_status === SUBMISSION_STATUS.notionFailed ||
-    record.notion_status === SUBMISSION_STATUS.rolledBack;
+  const shouldReplayNotion = !shouldSkipNotion(outputChannelId) &&
+    (!record.notion_page_id ||
+      record.notion_status === SUBMISSION_STATUS.notionFailed ||
+      record.notion_status === SUBMISSION_STATUS.rolledBack);
 
   if (!shouldReplaySlack && !shouldReplayNotion) {
     return { outputs: { submissionId: inputs.submissionId } };
@@ -114,15 +127,31 @@ export async function handleReplaySubmission(
   ).catch(() => ({ displayName: record.requested_by, imageUrl: undefined }));
 
   if (shouldReplaySlack) {
+    const ogpPreview = await resolveOgpPreview({
+      defaultCoverImageUrl: config.defaultCoverImageUrl,
+      targetUrl: record.url,
+      ogpProxyUrl: config.ogpProxyUrl,
+      ogpProxySharedSecretActive: config.ogpProxySharedSecretActive,
+    });
+    const coverImageUrl = ogpPreview.coverImageUrl;
+    const slackCoverImageUrl = coverImageUrl === config.defaultCoverImageUrl
+      ? undefined
+      : coverImageUrl;
     const slackResponse = await client.chat.postMessage({
-      channel: config.outputChannelId,
+      channel: outputChannelId,
+      unfurl_links: false,
+      unfurl_media: false,
       ...buildOutputMessage({
         title: record.title,
         url: record.url,
         comment: record.comment,
         mention: `<@${record.requested_by}>`,
-        coverImageUrl: record.cover_image_url,
+        posterImageUrl: profile.imageUrl,
+        coverImageUrl: slackCoverImageUrl,
         outputArchiveUrl: config.outputArchiveUrl,
+        ogpTitle: ogpPreview.title,
+        ogpDescription: ogpPreview.description,
+        ogpSiteName: ogpPreview.siteName,
       }),
     });
 
@@ -143,6 +172,13 @@ export async function handleReplaySubmission(
 
     record.slack_ts = slackResponse.ts;
     record.slack_status = SUBMISSION_STATUS.completed;
+    record.cover_image_url = coverImageUrl;
+    record.output_channel_id = outputChannelId;
+  }
+
+  if (shouldSkipNotion(outputChannelId)) {
+    record.notion_status = SUBMISSION_STATUS.completed;
+    record.notion_page_id = "";
   }
 
   if (shouldReplayNotion) {

@@ -1,5 +1,7 @@
 import { DefineFunction, Schema, SlackFunction } from "deno-slack-sdk/mod.ts";
-import { resolveCoverImage } from "../lib/cover-image.ts";
+import {
+  resolveOgpPreview,
+} from "../lib/cover-image.ts";
 import { getConfig } from "../lib/config.ts";
 import { sendFailureAlert } from "../lib/alert.ts";
 import { archiveNotionPage, createNotionPageWithRetry } from "../lib/notion.ts";
@@ -13,6 +15,8 @@ const MAX_TITLE_LENGTH = 200;
 const MAX_URL_LENGTH = 2_000;
 const MAX_COMMENT_LENGTH = 1_500;
 const DATASTORE_PUT_ATTEMPTS = 3;
+const ALLOWED_OUTPUT_CHANNEL_IDS = new Set(["C0AT62PR96Z", "C01HXE8TJ2Z"]);
+const TEST_OUTPUT_CHANNEL_ID = "C0AT62PR96Z";
 
 export const SubmitOutputFunctionDefinition = DefineFunction({
   callback_id: "submit_output",
@@ -25,6 +29,10 @@ export const SubmitOutputFunctionDefinition = DefineFunction({
       user: {
         type: Schema.slack.types.user_id,
         description: "The user submitting the output.",
+      },
+      channelId: {
+        type: Schema.slack.types.channel_id,
+        description: "The channel where the shortcut was invoked.",
       },
       title: {
         type: Schema.types.string,
@@ -39,7 +47,7 @@ export const SubmitOutputFunctionDefinition = DefineFunction({
         description: "Optional comment attached to the submission.",
       },
     },
-    required: ["user", "title", "url"],
+    required: ["user", "channelId", "title", "url"],
   },
   output_parameters: {
     properties: {
@@ -88,6 +96,7 @@ type SubmissionLogItem = {
   submission_id: string;
   requested_at: string;
   requested_by: string;
+  output_channel_id: string;
   title: string;
   url: string;
   comment: string;
@@ -114,7 +123,14 @@ type SubmitOutputClient = {
       channel: string;
       text: string;
       blocks: unknown[];
-    }): Promise<{ ok: boolean; error?: string; ts?: string }>;
+      unfurl_links?: boolean;
+      unfurl_media?: boolean;
+    }): Promise<{
+      ok: boolean;
+      error?: string;
+      ts?: string;
+      response_metadata?: { messages?: string[] };
+    }>;
     delete(args: {
       channel: string;
       ts: string;
@@ -189,7 +205,10 @@ async function putSubmission(
 async function rollbackSubmission(
   client: SubmitOutputClient,
   config: ReturnType<typeof getConfig>,
-  record: Pick<SubmissionLogItem, "slack_ts" | "notion_page_id">,
+  record: Pick<
+    SubmissionLogItem,
+    "slack_ts" | "notion_page_id" | "output_channel_id"
+  >,
 ) {
   const rollbackErrors: string[] = [];
   let slackRolledBack = false;
@@ -212,7 +231,7 @@ async function rollbackSubmission(
   if (record.slack_ts) {
     try {
       const response = await client.chat.delete({
-        channel: config.outputChannelId,
+        channel: record.output_channel_id,
         ts: record.slack_ts,
       });
       if (!response.ok) {
@@ -257,13 +276,30 @@ async function persistRollbackState(
 }
 
 function validateInputs(inputs: {
+  channelId: string;
   title: string;
   url: string;
   comment?: string;
-}): { title: string; url: string; comment: string } | { error: string } {
+}): {
+  channelId: string;
+  title: string;
+  url: string;
+  comment: string;
+} | { error: string } {
+  const channelId = inputs.channelId.trim();
   const title = inputs.title.trim();
   const url = inputs.url.trim();
   const comment = inputs.comment ?? "";
+
+  if (!channelId) {
+    return { error: "Output channel is required" };
+  }
+
+  if (!ALLOWED_OUTPUT_CHANNEL_IDS.has(channelId)) {
+    return {
+      error: "This workflow is only available in #prj-output and test-output",
+    };
+  }
 
   if (!title) {
     return { error: "Submission title is required" };
@@ -293,15 +329,21 @@ function validateInputs(inputs: {
   }
 
   return {
+    channelId,
     title,
     url,
     comment,
   };
 }
 
+function shouldSkipNotion(channelId: string) {
+  return channelId === TEST_OUTPUT_CHANNEL_ID;
+}
+
 export async function handleSubmitOutput(
   inputs: {
     user: string;
+    channelId: string;
     title: string;
     url: string;
     comment?: string;
@@ -329,20 +371,15 @@ export async function handleSubmitOutput(
   }
 
   const requestedAt = new Date().toISOString();
-  const coverImageUrl = await resolveCoverImage({
-    defaultCoverImageUrl: config.defaultCoverImageUrl,
-    targetUrl: parsedUrl.toString(),
-    ogpProxyUrl: config.ogpProxyUrl,
-    ogpProxySharedSecretActive: config.ogpProxySharedSecretActive,
-  });
   let record: SubmissionLogItem = {
     submission_id: submissionId,
     requested_at: requestedAt,
     requested_by: inputs.user,
+    output_channel_id: validatedInputs.channelId,
     title: validatedInputs.title,
     url: parsedUrl.toString(),
     comment: validatedInputs.comment,
-    cover_image_url: coverImageUrl,
+    cover_image_url: config.defaultCoverImageUrl,
     slack_status: SUBMISSION_STATUS.accepted,
     slack_ts: "",
     notion_status: SUBMISSION_STATUS.accepted,
@@ -363,24 +400,48 @@ export async function handleSubmitOutput(
       displayName: inputs.user,
     }),
   );
+  const ogpPreview = await resolveOgpPreview({
+    defaultCoverImageUrl: config.defaultCoverImageUrl,
+    targetUrl: parsedUrl.toString(),
+    ogpProxyUrl: config.ogpProxyUrl,
+    ogpProxySharedSecretActive: config.ogpProxySharedSecretActive,
+  });
+  const coverImageUrl = ogpPreview.coverImageUrl;
+  const slackCoverImageUrl = coverImageUrl === config.defaultCoverImageUrl
+    ? undefined
+    : coverImageUrl;
+  record = {
+    ...record,
+    cover_image_url: coverImageUrl,
+  };
   const postMessageResponse = await client.chat.postMessage({
-    channel: config.outputChannelId,
+    channel: validatedInputs.channelId,
+    unfurl_links: false,
+    unfurl_media: false,
     ...buildOutputMessage({
       title: validatedInputs.title,
       url: parsedUrl.toString(),
       comment: validatedInputs.comment,
-      mention: `<@${inputs.user}>`,
-      coverImageUrl,
-      outputArchiveUrl: config.outputArchiveUrl,
+        mention: `<@${inputs.user}>`,
+        posterImageUrl: profile.imageUrl,
+        coverImageUrl: slackCoverImageUrl,
+        outputArchiveUrl: config.outputArchiveUrl,
+      ogpTitle: ogpPreview.title,
+      ogpDescription: ogpPreview.description,
+      ogpSiteName: ogpPreview.siteName,
     }),
   });
 
   if (!postMessageResponse.ok || !postMessageResponse.ts) {
+    const detailMessages = postMessageResponse.response_metadata?.messages ?? [];
+    const detailSuffix = detailMessages.length > 0
+      ? ` details=${JSON.stringify(detailMessages)}`
+      : "";
     record = {
       ...record,
       slack_status: SUBMISSION_STATUS.slackFailed,
       error_code: postMessageResponse.error ?? "slack_post_failed",
-      error_message: "Failed to post the submission to Slack",
+      error_message: `Failed to post the submission to Slack.${detailSuffix}`,
     };
     const failedPutResponse = await putSubmission(client, record);
     await notifyFailure(client, config, {
@@ -398,7 +459,7 @@ export async function handleSubmitOutput(
     return {
       error: `Failed to post submission: ${
         postMessageResponse.error ?? "slack_post_failed"
-      }`,
+      }${detailSuffix}`,
     };
   }
 
@@ -425,6 +486,42 @@ export async function handleSubmitOutput(
       error: rollbackPersistResponse.ok
         ? rollbackMessage
         : `${rollbackMessage}; rollback_state=${rollbackPersistResponse.error}`,
+    };
+  }
+
+  if (shouldSkipNotion(validatedInputs.channelId)) {
+    record = {
+      ...record,
+      slack_status: SUBMISSION_STATUS.completed,
+      notion_status: SUBMISSION_STATUS.completed,
+      notion_page_id: "",
+    };
+
+    const completedPutResponse = await putSubmission(client, record);
+    if (!completedPutResponse.ok) {
+      const rollback = await rollbackSubmission(client, config, record);
+      const rollbackMessage = rollback.errors.length === 0
+        ? `Failed to mark submission as completed: ${completedPutResponse.error}`
+        : `Failed to mark submission as completed: ${completedPutResponse.error}; rollback=${
+          rollback.errors.join(", ")
+        }`;
+      const rollbackPersistResponse = await persistRollbackState(
+        client,
+        record,
+        rollback,
+        rollbackMessage,
+      );
+      return {
+        error: rollbackPersistResponse.ok
+          ? rollbackMessage
+          : `${rollbackMessage}; rollback_state=${rollbackPersistResponse.error}`,
+      };
+    }
+
+    return {
+      outputs: {
+        submissionId,
+      },
     };
   }
 

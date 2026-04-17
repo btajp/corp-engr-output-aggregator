@@ -10,6 +10,8 @@ const ENV_KEYS = [
   "ALERT_CHANNEL_ID",
   "DEFAULT_COVER_IMAGE_URL",
 ] as const;
+const TEST_OUTPUT_CHANNEL_ID = "C0AT62PR96Z";
+const PRODUCTION_OUTPUT_CHANNEL_ID = "C01HXE8TJ2Z";
 
 function resetEnv() {
   for (const key of ENV_KEYS) {
@@ -32,6 +34,7 @@ function setRequiredEnv() {
 function createClient(options?: {
   postMessageOk?: boolean;
   postMessageError?: string;
+  postMessageResponseMetadataMessages?: string[];
   usersInfoThrows?: boolean;
   datastoreFailureCalls?: number[];
 }) {
@@ -80,6 +83,13 @@ function createClient(options?: {
             return Promise.resolve({
               ok: false,
               error: options.postMessageError ?? "channel_not_found",
+              ...(options.postMessageResponseMetadataMessages
+                ? {
+                  response_metadata: {
+                    messages: options.postMessageResponseMetadataMessages,
+                  },
+                }
+                : {}),
             });
           }
 
@@ -138,6 +148,7 @@ Deno.test("handleSubmitOutput stores a completed submission", async () => {
     const result = await handleSubmitOutput(
       {
         user: "U123",
+        channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
         title: "Weekly note",
         url: "https://example.com/post",
         comment: "hello",
@@ -150,40 +161,58 @@ Deno.test("handleSubmitOutput stores a completed submission", async () => {
     assertMatch(outputs.submissionId, /^[0-9A-Z]{26}$/);
     assertEquals(datastoreItems.length, 3);
     assertEquals(datastoreItems[0].slack_status, SUBMISSION_STATUS.accepted);
+    assertEquals(datastoreItems[0].output_channel_id, PRODUCTION_OUTPUT_CHANNEL_ID);
     assertEquals(datastoreItems[1].slack_status, SUBMISSION_STATUS.accepted);
     assertEquals(datastoreItems[1].slack_ts, "1710000000.000100");
     assertEquals(datastoreItems[2].notion_status, SUBMISSION_STATUS.completed);
     assertEquals(datastoreItems[2].notion_page_id, "page-123");
     assertEquals(postedMessages.length, 1);
-    assertEquals(postedMessages[0].channel, "COUTPUT");
+    assertEquals(postedMessages[0].channel, PRODUCTION_OUTPUT_CHANNEL_ID);
     assertEquals(
       postedMessages[0].text,
-      "新しいアウトプットが投稿されたよ\nhttps://example.com/post",
+      "新しいアウトプットが投稿されたよ: Weekly note",
+    );
+    assertEquals(
+      (
+        postedMessages[0].blocks as Array<{
+          accessory?: { image_url?: string };
+        }>
+      ).at(4)?.accessory?.image_url,
+      "https://example.com/avatar.png",
     );
     assertEquals(
       (
         postedMessages[0].blocks as Array<{
           text?: { text?: string };
-          accessory?: { type?: string; url?: string };
+          image_url?: string;
+        }>
+      ).at(3)?.text?.text,
+      "*URL:*\nhttps://example.com/post",
+    );
+    assertEquals(
+      (
+        postedMessages[0].blocks as Array<{
+          text?: { text?: string };
+          image_url?: string;
+        }>
+      ).at(6)?.text?.text,
+      "*Weekly note*",
+    );
+    assertEquals(
+      (
+        postedMessages[0].blocks as Array<{
+          image_url?: string;
+        }>
+      ).some((block) => block.image_url === "https://example.com/default-cover.png"),
+      false,
+    );
+    assertEquals(
+      (
+        postedMessages[0].blocks as Array<{
+          text?: { text?: string };
         }>
       ).at(-1)?.text?.text,
-      "*過去の投稿は*",
-    );
-    assertEquals(
-      (
-        postedMessages[0].blocks as Array<{
-          accessory?: { type?: string; url?: string };
-        }>
-      ).at(-1)?.accessory?.type,
-      "button",
-    );
-    assertEquals(
-      (
-        postedMessages[0].blocks as Array<{
-          accessory?: { type?: string; url?: string };
-        }>
-      ).at(-1)?.accessory?.url,
-      "https://corp-engr-outputs.notion.site/",
+      "*過去の投稿は* <https://corp-engr-outputs.notion.site/|こちら>",
     );
     assertEquals(notionRequests.length, 1);
     assertEquals(
@@ -213,6 +242,7 @@ Deno.test("handleSubmitOutput marks Slack failures in Datastore", async () => {
     const result = await handleSubmitOutput(
       {
         user: "U123",
+        channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
         title: "Weekly note",
         url: "https://example.com/post",
         comment: "hello",
@@ -232,6 +262,59 @@ Deno.test("handleSubmitOutput marks Slack failures in Datastore", async () => {
     resetEnv();
   }
 });
+
+Deno.test(
+  "handleSubmitOutput surfaces response_metadata messages on Slack failure",
+  async () => {
+    setRequiredEnv();
+    const { client, datastoreItems, postedMessages } = createClient({
+      postMessageOk: false,
+      postMessageError: "invalid_blocks",
+      postMessageResponseMetadataMessages: [
+        "invalid block type image at blocks[7]",
+      ],
+    });
+
+    using _stubFetch = stub(
+      globalThis,
+      "fetch",
+      () => Promise.resolve(new Response('{"id":"page-123"}', { status: 200 })),
+    );
+
+    try {
+      const result = await handleSubmitOutput(
+        {
+          user: "U123",
+          channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
+          title: "Weekly note",
+          url: "https://example.com/post",
+          comment: "hello",
+        },
+        client,
+      );
+
+      const errorText = expectError(result);
+      assertMatch(errorText, /invalid_blocks/);
+      assertMatch(errorText, /invalid block type image at blocks\[7\]/);
+      assertEquals(
+        datastoreItems[1].slack_status,
+        SUBMISSION_STATUS.slackFailed,
+      );
+      assertMatch(
+        datastoreItems[1].error_message,
+        /invalid block type image at blocks\[7\]/,
+      );
+      const alertBlocks =
+        (postedMessages[1].blocks as Array<{ text: { text: string } }>);
+      assertMatch(
+        alertBlocks[0].text.text,
+        /invalid block type image at blocks\[7\]/,
+      );
+    } finally {
+      resetEnv();
+    }
+  },
+);
 
 Deno.test("handleSubmitOutput marks Notion failures in Datastore", async () => {
   setRequiredEnv();
@@ -253,6 +336,7 @@ Deno.test("handleSubmitOutput marks Notion failures in Datastore", async () => {
     const result = await handleSubmitOutput(
       {
         user: "U123",
+        channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
         title: "Weekly note",
         url: "https://example.com/post",
         comment: "hello",
@@ -300,6 +384,7 @@ Deno.test("handleSubmitOutput falls back when users.info throws", async () => {
     const result = await handleSubmitOutput(
       {
         user: "U123",
+        channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
         title: "Weekly note",
         url: "https://example.com/post",
       },
@@ -346,6 +431,7 @@ Deno.test("handleSubmitOutput rolls back when final datastore update fails", asy
     const result = await handleSubmitOutput(
       {
         user: "U123",
+        channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
         title: "Weekly note",
         url: "https://example.com/post",
       },
@@ -381,6 +467,7 @@ Deno.test("handleSubmitOutput rejects an invalid URL", async () => {
     const result = await handleSubmitOutput(
       {
         user: "U123",
+        channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
         title: "Weekly note",
         url: "not-a-url",
       },
@@ -401,6 +488,7 @@ Deno.test("handleSubmitOutput rejects a non-http URL", async () => {
     const result = await handleSubmitOutput(
       {
         user: "U123",
+        channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
         title: "Weekly note",
         url: "javascript:alert('xss')",
       },
@@ -424,6 +512,7 @@ Deno.test("handleSubmitOutput rejects a blank title", async () => {
     const result = await handleSubmitOutput(
       {
         user: "U123",
+        channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
         title: "   ",
         url: "https://example.com/post",
       },
@@ -444,6 +533,7 @@ Deno.test("handleSubmitOutput rejects an oversized comment", async () => {
     const result = await handleSubmitOutput(
       {
         user: "U123",
+        channelId: PRODUCTION_OUTPUT_CHANNEL_ID,
         title: "Weekly note",
         url: "https://example.com/post",
         comment: "a".repeat(1_501),
@@ -455,6 +545,72 @@ Deno.test("handleSubmitOutput rejects an oversized comment", async () => {
       expectError(result),
       "Submission comment must be 1500 characters or fewer",
     );
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleSubmitOutput rejects disallowed channels", async () => {
+  setRequiredEnv();
+  const { client } = createClient();
+
+  try {
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        channelId: "CBLOCKED",
+        title: "Weekly note",
+        url: "https://example.com/post",
+      },
+      client,
+    );
+
+    assertEquals(
+      expectError(result),
+      "This workflow is only available in #prj-output and test-output",
+    );
+  } finally {
+    resetEnv();
+  }
+});
+
+Deno.test("handleSubmitOutput skips Notion for test-output", async () => {
+  setRequiredEnv();
+  const { client, datastoreItems, postedMessages } = createClient();
+  const notionRequests: unknown[] = [];
+
+  using _stubFetch = stub(
+    globalThis,
+    "fetch",
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request
+        ? input
+        : new Request(input, init);
+      notionRequests.push(await request.json());
+      return new Response('{"id":"page-123"}', { status: 200 });
+    },
+  );
+
+  try {
+    const result = await handleSubmitOutput(
+      {
+        user: "U123",
+        channelId: TEST_OUTPUT_CHANNEL_ID,
+        title: "Test only",
+        url: "https://example.com/post",
+        comment: "no notion",
+      },
+      client,
+    );
+
+    expectSuccess(result);
+    assertEquals(postedMessages.length, 1);
+    assertEquals(postedMessages[0].channel, TEST_OUTPUT_CHANNEL_ID);
+    assertEquals(datastoreItems.length, 3);
+    assertEquals(datastoreItems.at(-1)?.slack_status, SUBMISSION_STATUS.completed);
+    assertEquals(datastoreItems.at(-1)?.notion_status, SUBMISSION_STATUS.completed);
+    assertEquals(datastoreItems.at(-1)?.notion_page_id, "");
+    assertEquals(notionRequests.length, 0);
   } finally {
     resetEnv();
   }
