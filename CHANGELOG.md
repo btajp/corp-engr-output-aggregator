@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- 投稿フォームの URL field に `format: "url"` を指定し、Slack OpenForm 側で
+  URL 形式の validation を走らせることで、投稿者本人に即フィードバック
+  されるようにした
+
 ## 0.2.0
 
 - Slack 投稿メッセージに OGP card を追加し、site name / title / description

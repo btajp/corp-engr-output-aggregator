@@ -37,6 +37,7 @@ const form = SubmitOutputWorkflow.addStep(Schema.slack.functions.OpenForm, {
         name: "url",
         title: "URL",
         type: Schema.types.string,
+        format: "url",
       },
       {
         name: "comment",
