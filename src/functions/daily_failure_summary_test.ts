@@ -83,3 +83,62 @@ Deno.test("handleDailyFailureSummary sends a compact summary", async () => {
   );
   resetEnv();
 });
+
+Deno.test(
+  "handleDailyFailureSummary counts validation_failed records",
+  async () => {
+    setRequiredEnv();
+    const postedMessages: Array<Record<string, unknown>> = [];
+    const result = await handleDailyFailureSummary(
+      {
+        apps: {
+          datastore: {
+            query: () =>
+              Promise.resolve({
+                ok: true,
+                items: [
+                  {
+                    submission_id: "01VAL",
+                    requested_at: "2026-04-16T00:10:00.000Z",
+                    title: "invalid url item",
+                    slack_status: SUBMISSION_STATUS.validationFailed,
+                    notion_status: SUBMISSION_STATUS.validationFailed,
+                    error_code: "validation_failed",
+                  },
+                  {
+                    submission_id: "01SLK",
+                    requested_at: "2026-04-16T00:20:00.000Z",
+                    title: "slack failed item",
+                    slack_status: SUBMISSION_STATUS.slackFailed,
+                    notion_status: SUBMISSION_STATUS.accepted,
+                    error_code: "invalid_blocks",
+                  },
+                ],
+                response_metadata: {},
+              }),
+          },
+        },
+        chat: {
+          postMessage: (payload) => {
+            postedMessages.push(payload as Record<string, unknown>);
+            return Promise.resolve({ ok: true });
+          },
+        },
+      },
+      new Date("2026-04-16T12:00:00.000Z"),
+    );
+
+    if (!("outputs" in result)) {
+      throw new Error(result.error);
+    }
+
+    assertEquals(result.outputs?.failureCount, 2);
+    const summaryBlocks = (postedMessages[0].blocks as Array<
+      { text: { text: string } }
+    >);
+    assertMatch(summaryBlocks[0].text.text, /Validation失敗\*: 1/);
+    assertMatch(summaryBlocks[0].text.text, /Slack失敗\*: 1/);
+    assertMatch(summaryBlocks[0].text.text, /validation_failed/);
+    resetEnv();
+  },
+);

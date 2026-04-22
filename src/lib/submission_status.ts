@@ -4,6 +4,7 @@ export const SUBMISSION_STATUS = {
   slackFailed: "slack_failed",
   notionFailed: "notion_failed",
   rolledBack: "rolled_back",
+  validationFailed: "validation_failed",
 } as const;
 
 export type SubmissionStatus =

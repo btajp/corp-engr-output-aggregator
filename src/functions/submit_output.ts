@@ -162,6 +162,7 @@ async function notifyFailure(
   config: ReturnType<typeof getConfig>,
   input: {
     submissionId: string;
+    userId: string;
     title: string;
     errorCode: string;
     errorMessage: string;
@@ -171,6 +172,7 @@ async function notifyFailure(
     await sendFailureAlert(client, {
       channelId: config.alertChannelId,
       submissionId: input.submissionId,
+      userId: input.userId,
       title: input.title,
       errorCode: input.errorCode,
       errorMessage: input.errorMessage,
@@ -178,6 +180,46 @@ async function notifyFailure(
   } catch {
     // Alert failure should not hide the original error.
   }
+}
+
+async function recordValidationFailure(
+  client: SubmitOutputClient,
+  config: ReturnType<typeof getConfig>,
+  input: {
+    user: string;
+    channelId: string;
+    title: string;
+    url: string;
+    comment: string;
+    errorMessage: string;
+  },
+) {
+  const submissionId = createSubmissionId();
+  const record: SubmissionLogItem = {
+    submission_id: submissionId,
+    requested_at: new Date().toISOString(),
+    requested_by: input.user,
+    output_channel_id: input.channelId,
+    title: input.title,
+    url: input.url,
+    comment: input.comment,
+    cover_image_url: config.defaultCoverImageUrl,
+    slack_status: SUBMISSION_STATUS.validationFailed,
+    slack_ts: "",
+    notion_status: SUBMISSION_STATUS.validationFailed,
+    notion_page_id: "",
+    error_code: "validation_failed",
+    error_message: input.errorMessage,
+  };
+
+  await putSubmission(client, record);
+  await notifyFailure(client, config, {
+    submissionId,
+    userId: input.user,
+    title: input.title || "(no title)",
+    errorCode: record.error_code,
+    errorMessage: record.error_message,
+  });
 }
 
 async function putSubmission(
@@ -354,6 +396,14 @@ export async function handleSubmitOutput(
   const config = getConfig(env);
   const validatedInputs = validateInputs(inputs);
   if ("error" in validatedInputs) {
+    await recordValidationFailure(client, config, {
+      user: inputs.user,
+      channelId: inputs.channelId ?? "",
+      title: inputs.title ?? "",
+      url: inputs.url ?? "",
+      comment: inputs.comment ?? "",
+      errorMessage: validatedInputs.error,
+    });
     return validatedInputs;
   }
 
@@ -363,10 +413,26 @@ export async function handleSubmitOutput(
   try {
     parsedUrl = new URL(validatedInputs.url);
   } catch {
+    await recordValidationFailure(client, config, {
+      user: inputs.user,
+      channelId: validatedInputs.channelId,
+      title: validatedInputs.title,
+      url: validatedInputs.url,
+      comment: validatedInputs.comment,
+      errorMessage: "Submitted URL is invalid",
+    });
     return { error: "Submitted URL is invalid" };
   }
 
   if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    await recordValidationFailure(client, config, {
+      user: inputs.user,
+      channelId: validatedInputs.channelId,
+      title: validatedInputs.title,
+      url: validatedInputs.url,
+      comment: validatedInputs.comment,
+      errorMessage: "Submitted URL must use http or https",
+    });
     return { error: "Submitted URL must use http or https" };
   }
 
@@ -446,6 +512,7 @@ export async function handleSubmitOutput(
     const failedPutResponse = await putSubmission(client, record);
     await notifyFailure(client, config, {
       submissionId,
+      userId: inputs.user,
       title: validatedInputs.title,
       errorCode: record.error_code,
       errorMessage: record.error_message,
@@ -555,6 +622,7 @@ export async function handleSubmitOutput(
     const failedPutResponse = await putSubmission(client, record);
     await notifyFailure(client, config, {
       submissionId,
+      userId: inputs.user,
       title: validatedInputs.title,
       errorCode: record.error_code,
       errorMessage: record.error_message,

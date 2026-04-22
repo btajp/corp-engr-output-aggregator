@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- 失敗アラートに投稿者メンション（`<@userId>`）を表示するよう変更
+- validation error（URL invalid / title 空 / disallowed channel 等）も
+  `submission_log` に `validation_failed` として記録し、`sendFailureAlert`
+  / daily summary の両方に反映するよう変更
+- `SUBMISSION_STATUS` に `validationFailed` を追加
+- Daily failure summary の本文に `Validation失敗` カウント行を追加
+- replay workflow の失敗アラートにも投稿者メンションを含めるよう変更
+
 ## 0.2.1
 
 - 投稿フォームの URL field に `format: "url"` を指定し、Slack OpenForm 側で

@@ -64,10 +64,18 @@ function isFailureRecord(item: SubmissionLogItem) {
   return item.slack_status === SUBMISSION_STATUS.slackFailed ||
     item.notion_status === SUBMISSION_STATUS.notionFailed ||
     item.slack_status === SUBMISSION_STATUS.rolledBack ||
-    item.notion_status === SUBMISSION_STATUS.rolledBack;
+    item.notion_status === SUBMISSION_STATUS.rolledBack ||
+    item.slack_status === SUBMISSION_STATUS.validationFailed ||
+    item.notion_status === SUBMISSION_STATUS.validationFailed;
 }
 
 function summarizeStatus(item: SubmissionLogItem) {
+  if (
+    item.slack_status === SUBMISSION_STATUS.validationFailed ||
+    item.notion_status === SUBMISSION_STATUS.validationFailed
+  ) {
+    return "validation_failed";
+  }
   if (item.slack_status === SUBMISSION_STATUS.slackFailed) {
     return "slack_failed";
   }
@@ -165,6 +173,11 @@ export async function handleDailyFailureSummary(
     items.filter((item) =>
       item.notion_status === SUBMISSION_STATUS.notionFailed
     ).length;
+  const validationFailures =
+    items.filter((item) =>
+      item.slack_status === SUBMISSION_STATUS.validationFailed ||
+      item.notion_status === SUBMISSION_STATUS.validationFailed
+    ).length;
   const rolledBackCount =
     items.filter((item) =>
       item.slack_status === SUBMISSION_STATUS.rolledBack ||
@@ -177,6 +190,7 @@ export async function handleDailyFailureSummary(
     totalFailures: items.length,
     slackFailures,
     notionFailures,
+    validationFailures,
     rolledBackCount,
     lines: latestItems.map((item) =>
       `- \`${item.submission_id}\` ${summarizeStatus(item)} ${item.title} (${

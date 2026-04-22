@@ -159,6 +159,7 @@ export async function handleReplaySubmission(
       await sendFailureAlert(client, {
         channelId: config.alertChannelId,
         submissionId: record.submission_id,
+        userId: record.requested_by,
         title: record.title,
         errorCode: slackResponse.error ?? "slack_replay_failed",
         errorMessage: "Replay failed while posting to Slack",
@@ -210,6 +211,7 @@ export async function handleReplaySubmission(
       await sendFailureAlert(client, {
         channelId: config.alertChannelId,
         submissionId: record.submission_id,
+        userId: record.requested_by,
         title: record.title,
         errorCode: record.error_code,
         errorMessage: record.error_message,

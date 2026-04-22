@@ -461,7 +461,7 @@ Deno.test("handleSubmitOutput rolls back when final datastore update fails", asy
 
 Deno.test("handleSubmitOutput rejects an invalid URL", async () => {
   setRequiredEnv();
-  const { client } = createClient();
+  const { client, datastoreItems, postedMessages } = createClient();
 
   try {
     const result = await handleSubmitOutput(
@@ -475,6 +475,25 @@ Deno.test("handleSubmitOutput rejects an invalid URL", async () => {
     );
 
     assertEquals(expectError(result), "Submitted URL is invalid");
+    assertEquals(datastoreItems.length, 1);
+    assertEquals(
+      datastoreItems[0].slack_status,
+      SUBMISSION_STATUS.validationFailed,
+    );
+    assertEquals(
+      datastoreItems[0].notion_status,
+      SUBMISSION_STATUS.validationFailed,
+    );
+    assertEquals(datastoreItems[0].error_code, "validation_failed");
+    assertEquals(datastoreItems[0].error_message, "Submitted URL is invalid");
+    assertEquals(datastoreItems[0].requested_by, "U123");
+    assertEquals(postedMessages.length, 1);
+    assertEquals(postedMessages[0].channel, "CALERT");
+    const alertBlocks = postedMessages[0].blocks as Array<
+      { text: { text: string } }
+    >;
+    assertMatch(alertBlocks[0].text.text, /<@U123>/);
+    assertMatch(alertBlocks[0].text.text, /Submitted URL is invalid/);
   } finally {
     resetEnv();
   }
