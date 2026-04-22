@@ -310,6 +310,9 @@ Deno.test(
         alertBlocks[0].text.text,
         /invalid block type image at blocks\[7\]/,
       );
+      assertMatch(alertBlocks[0].text.text, /\[PROD\]/);
+      assertMatch(alertBlocks[0].text.text, /<#C01HXE8TJ2Z>/);
+      assertMatch(alertBlocks[0].text.text, /<@U123>/);
     } finally {
       resetEnv();
     }
@@ -494,6 +497,8 @@ Deno.test("handleSubmitOutput rejects an invalid URL", async () => {
     >;
     assertMatch(alertBlocks[0].text.text, /<@U123>/);
     assertMatch(alertBlocks[0].text.text, /Submitted URL is invalid/);
+    assertMatch(alertBlocks[0].text.text, /\[PROD\]/);
+    assertMatch(alertBlocks[0].text.text, /<#C01HXE8TJ2Z>/);
   } finally {
     resetEnv();
   }

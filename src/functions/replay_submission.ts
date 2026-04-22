@@ -158,6 +158,7 @@ export async function handleReplaySubmission(
     if (!slackResponse.ok || !slackResponse.ts) {
       await sendFailureAlert(client, {
         channelId: config.alertChannelId,
+        outputChannelId: outputChannelId,
         submissionId: record.submission_id,
         userId: record.requested_by,
         title: record.title,
@@ -210,6 +211,7 @@ export async function handleReplaySubmission(
       });
       await sendFailureAlert(client, {
         channelId: config.alertChannelId,
+        outputChannelId: outputChannelId,
         submissionId: record.submission_id,
         userId: record.requested_by,
         title: record.title,

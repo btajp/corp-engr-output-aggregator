@@ -8,10 +8,24 @@ type AlertClient = {
   };
 };
 
+const TEST_OUTPUT_CHANNEL_ID = "C0AT62PR96Z";
+const PRODUCTION_OUTPUT_CHANNEL_ID = "C01HXE8TJ2Z";
+
+function channelLabel(channelId: string): string {
+  if (channelId === TEST_OUTPUT_CHANNEL_ID) {
+    return "[TEST]";
+  }
+  if (channelId === PRODUCTION_OUTPUT_CHANNEL_ID) {
+    return "[PROD]";
+  }
+  return "[OTHER]";
+}
+
 export async function sendFailureAlert(
   client: AlertClient,
   input: {
     channelId: string;
+    outputChannelId: string;
     submissionId: string;
     userId: string;
     title: string;
@@ -19,16 +33,20 @@ export async function sendFailureAlert(
     errorMessage: string;
   },
 ) {
+  const label = channelLabel(input.outputChannelId);
+  const outputChannelMention = input.outputChannelId
+    ? `<#${input.outputChannelId}>`
+    : "(unknown)";
   return await client.chat.postMessage({
     channel: input.channelId,
-    text: `submission_id=${input.submissionId} failed`,
+    text: `${label} submission_id=${input.submissionId} failed`,
     blocks: [
       {
         type: "section",
         text: {
           type: "mrkdwn",
           text:
-            `*投稿処理で失敗が発生しました*\n*投稿者*: <@${input.userId}>\n*submission_id*: \`${input.submissionId}\`\n*title*: ${input.title}\n*error_code*: \`${input.errorCode}\`\n*error_message*: ${input.errorMessage}`,
+            `*投稿処理で失敗が発生しました* ${label}\n*投稿者*: <@${input.userId}>\n*投稿先*: ${outputChannelMention}\n*submission_id*: \`${input.submissionId}\`\n*title*: ${input.title}\n*error_code*: \`${input.errorCode}\`\n*error_message*: ${input.errorMessage}`,
         },
       },
     ],

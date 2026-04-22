@@ -163,6 +163,7 @@ async function notifyFailure(
   input: {
     submissionId: string;
     userId: string;
+    outputChannelId: string;
     title: string;
     errorCode: string;
     errorMessage: string;
@@ -171,6 +172,7 @@ async function notifyFailure(
   try {
     await sendFailureAlert(client, {
       channelId: config.alertChannelId,
+      outputChannelId: input.outputChannelId,
       submissionId: input.submissionId,
       userId: input.userId,
       title: input.title,
@@ -216,6 +218,7 @@ async function recordValidationFailure(
   await notifyFailure(client, config, {
     submissionId,
     userId: input.user,
+    outputChannelId: input.channelId,
     title: input.title || "(no title)",
     errorCode: record.error_code,
     errorMessage: record.error_message,
@@ -513,6 +516,7 @@ export async function handleSubmitOutput(
     await notifyFailure(client, config, {
       submissionId,
       userId: inputs.user,
+      outputChannelId: validatedInputs.channelId,
       title: validatedInputs.title,
       errorCode: record.error_code,
       errorMessage: record.error_message,
@@ -623,6 +627,7 @@ export async function handleSubmitOutput(
     await notifyFailure(client, config, {
       submissionId,
       userId: inputs.user,
+      outputChannelId: validatedInputs.channelId,
       title: validatedInputs.title,
       errorCode: record.error_code,
       errorMessage: record.error_message,
