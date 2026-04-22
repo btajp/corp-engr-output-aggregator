@@ -170,7 +170,7 @@ async function notifyFailure(
   },
 ) {
   try {
-    await sendFailureAlert(client, {
+    const response = await sendFailureAlert(client, {
       channelId: config.alertChannelId,
       outputChannelId: input.outputChannelId,
       submissionId: input.submissionId,
@@ -179,9 +179,26 @@ async function notifyFailure(
       errorCode: input.errorCode,
       errorMessage: input.errorMessage,
     });
-  } catch {
-    // Alert failure should not hide the original error.
+    if (!response.ok) {
+      console.warn(
+        `sendFailureAlert returned not-ok error=${
+          response.error ?? "unknown"
+        } submissionId=${input.submissionId}`,
+      );
+    }
+  } catch (error) {
+    console.warn(
+      `sendFailureAlert threw error=${
+        error instanceof Error ? error.message : String(error)
+      } submissionId=${input.submissionId}`,
+    );
   }
+}
+
+function safeSlice(text: string, maxLength: number) {
+  return text.length <= maxLength
+    ? text
+    : `${text.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
 async function recordValidationFailure(
@@ -197,29 +214,56 @@ async function recordValidationFailure(
   },
 ) {
   const submissionId = createSubmissionId();
+  const safeTitle = safeSlice(input.title, MAX_TITLE_LENGTH);
+  const safeUrl = safeSlice(input.url, MAX_URL_LENGTH);
+  const safeComment = safeSlice(input.comment, MAX_COMMENT_LENGTH);
+  const originalLengthNotes: string[] = [];
+  if (safeTitle.length < input.title.length) {
+    originalLengthNotes.push(`title_len=${input.title.length}`);
+  }
+  if (safeUrl.length < input.url.length) {
+    originalLengthNotes.push(`url_len=${input.url.length}`);
+  }
+  if (safeComment.length < input.comment.length) {
+    originalLengthNotes.push(`comment_len=${input.comment.length}`);
+  }
+  const errorMessage = originalLengthNotes.length > 0
+    ? `${input.errorMessage} (${originalLengthNotes.join(", ")})`
+    : input.errorMessage;
+
   const record: SubmissionLogItem = {
     submission_id: submissionId,
     requested_at: new Date().toISOString(),
     requested_by: input.user,
     output_channel_id: input.channelId,
-    title: input.title,
-    url: input.url,
-    comment: input.comment,
+    title: safeTitle,
+    url: safeUrl,
+    comment: safeComment,
     cover_image_url: config.defaultCoverImageUrl,
     slack_status: SUBMISSION_STATUS.validationFailed,
     slack_ts: "",
     notion_status: SUBMISSION_STATUS.validationFailed,
     notion_page_id: "",
     error_code: "validation_failed",
-    error_message: input.errorMessage,
+    error_message: errorMessage,
   };
 
-  await putSubmission(client, record);
+  console.warn(
+    `recordValidationFailure invoked submissionId=${submissionId} errorMessage=${errorMessage}`,
+  );
+
+  const putResponse = await putSubmission(client, record);
+  if (!putResponse.ok) {
+    console.warn(
+      `recordValidationFailure datastore put failed error=${putResponse.error} submissionId=${submissionId}`,
+    );
+  }
+
   await notifyFailure(client, config, {
     submissionId,
     userId: input.user,
     outputChannelId: input.channelId,
-    title: input.title || "(no title)",
+    title: safeTitle || "(no title)",
     errorCode: record.error_code,
     errorMessage: record.error_message,
   });

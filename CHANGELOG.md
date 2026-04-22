@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.2
+
+- `recordValidationFailure` で record の `title` / `url` / `comment` を
+  `MAX_*_LENGTH` 以内に truncate し、Datastore の item size 上限超過に
+  よる `ValidationException` を回避
+- truncate が発生した場合は `error_message` に `title_len=N` 等の
+  original length ヒントを付記
+- `notifyFailure` に診断ログを追加し、alert の silent fail を可視化
+  （`sendFailureAlert` の not-ok / 例外を `console.warn` で activity log
+  に出す）
+- `recordValidationFailure` 呼び出し時と datastore put 失敗時も
+  `console.warn` を出すよう変更
+
 ## 0.3.1
 
 - 失敗アラート本文に環境ラベル（`[TEST]` / `[PROD]` / `[OTHER]`）と
